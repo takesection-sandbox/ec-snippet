@@ -1,0 +1,133 @@
+service: ec-snippet
+
+provider:
+  name: aws
+  role: LambdaRole
+
+package:
+  individually: true
+
+functions:
+  ec-snippet:
+    handler: "com.pigumer.Hello::handleRequest"
+    package:
+      artifact: "../target/scala-2.12/ec-snippet-assembly-0.1.0-SNAPSHOT.jar"
+    runtime: java8
+    memorySize: 256
+    timeout: 30
+    environment:
+      ELASTICACHE_ENDPOINT:
+        Fn::GetAtt:
+          - ElastiCache
+          - RedisEndpoint.Address
+      ELASTICACHE_PORT:
+        Fn::GetAtt:
+          - ElastiCache
+          - RedisEndpoint.Port
+    vpc:
+      securityGroupIds:
+        - Ref: SecurityGroup
+      subnetIds:
+        - Ref: Subnet1
+        - Ref: Subnet2
+resources:
+  Resources:
+    Vpc:
+      Type: AWS::EC2::VPC
+      Properties:
+        CidrBlock: 192.168.0.0/24
+        EnableDnsSupport: true
+    Subnet1:
+      Type: AWS::EC2::Subnet
+      Properties:
+        AvailabilityZone:
+          Fn::Select:
+            - 0
+            - Fn::GetAZs: ''
+        CidrBlock: 192.168.0.0/25
+        VpcId: !Ref Vpc
+    Subnet2:
+      Type: AWS::EC2::Subnet
+      Properties:
+        AvailabilityZone:
+          Fn::Select:
+            - 1
+            - Fn::GetAZs: ''
+        CidrBlock: 192.168.0.128/25
+        VpcId: !Ref Vpc
+    InternetGateway:
+      Type: AWS::EC2::InternetGateway
+    VPCGatewayAttachment:
+      Type: AWS::EC2::VPCGatewayAttachment
+      Properties:
+        InternetGatewayId: !Ref InternetGateway
+        VpcId: !Ref Vpc
+    RouteTable:
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId: !Ref Vpc
+    Route:
+      Type: AWS::EC2::Route
+      Properties:
+        DestinationCidrBlock: 0.0.0.0/0
+        GatewayId: !Ref InternetGateway
+        RouteTableId: !Ref RouteTable
+    Subnet1RouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId: !Ref RouteTable
+        SubnetId: !Ref Subnet1
+    Subnet2RouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId: !Ref RouteTable
+        SubnetId: !Ref Subnet2
+    SecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: "Elasticache Security Group"
+        VpcId: !Ref Vpc
+    SecurityGroupIngress:
+      Type: AWS::EC2::SecurityGroupIngress
+      Properties:
+        GroupId: !Ref SecurityGroup
+        IpProtocol: "tcp"
+        FromPort: "6379"
+        ToPort: "6379"
+        SourceSecurityGroupId: !Ref SecurityGroup
+    SubnetGroups:
+      Type: AWS::ElastiCache::SubnetGroup
+      Properties:
+        Description: ElastiCache Subnet Groups
+        SubnetIds:
+          - !Ref Subnet1
+          - !Ref Subnet2
+    ElastiCache:
+      Type: AWS::ElastiCache::CacheCluster
+      Properties:
+        CacheNodeType: cache.t2.micro
+        CacheSubnetGroupName: !Ref SubnetGroups
+        Engine: redis
+        EngineVersion: '5.0.5'
+        NumCacheNodes: 1
+        VpcSecurityGroupIds:
+          - Fn::GetAtt:
+              - SecurityGroup
+              - GroupId
+    LambdaRole:
+      Type: AWS::IAM::Role
+      Properties:
+        Path: /
+        RoleName: ec-snippet-${opt:stage}
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+          - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole

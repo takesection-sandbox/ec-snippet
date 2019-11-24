@@ -8,6 +8,12 @@ ThisBuild / organizationName := "ec-snippet"
 lazy val root = (project in file("."))
   .settings(
     name := "ec-snippet",
-    libraryDependencies ++= Deps
+    libraryDependencies ++= Deps,
+    assemblyMergeStrategy in assembly := {
+      case "META-INF/io.netty.versions.properties" => MergeStrategy.first
+      case x =>
+        val oldStrategy = (assemblyMergeStrategy in assembly).value
+        oldStrategy(x)
+    }
   )
 
